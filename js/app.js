@@ -4,10 +4,9 @@ const LOCAL_API_KEY = window.APP_CONFIG?.CWA_API_KEY || "";
 const endpoints = {
   rainfall: "O-A0002-001",
   uv: "O-A0005-001",
-  forecast: "F-C0032-001",
 };
 
-const state = { rainfall: [], uv: [], forecast: [] };
+const state = { rainfall: [], uv: []};
 
 const $ = (selector) => document.querySelector(selector);
 const safeNumber = (value) => {
@@ -91,25 +90,6 @@ function normalizeUv(records) {
   })).filter((item) => item.value > 0).sort((a, b) => b.value - a.value).slice(0, 6);
 }
 
-function readForecastElement(location, elementName) {
-  const elements = location.weatherElement || location.WeatherElement || [];
-  const element = elements.find((entry) => (entry.elementName || entry.ElementName) === elementName);
-  const first = element?.time?.[0] || element?.Time?.[0] || {};
-  return get(first, ["parameter.parameterName", "parameter.ParameterName", "elementValue.0.value", "ElementValue.0.Weather", "ElementValue.0.Temperature", "ElementValue.0.ProbabilityOfPrecipitation"], "—");
-}
-
-function normalizeForecast(records) {
-  const locations = records.location || records.Location || records.Locations?.[0]?.Location || [];
-  return locations.map((location) => ({
-    city: location.locationName || location.LocationName || "未知縣市",
-    weather: readForecastElement(location, "Wx"),
-    min: safeNumber(readForecastElement(location, "MinT")),
-    max: safeNumber(readForecastElement(location, "MaxT")),
-    rain: safeNumber(readForecastElement(location, "PoP")),
-    comfort: readForecastElement(location, "CI"),
-  }));
-}
-
 function rainLevel(value) {
   if (value >= 80) return "雨勢明顯，外出請攜帶雨具並留意低窪地區。";
   if (value >= 40) return "部分地區有較明顯降雨，行程安排請留意。";
@@ -166,55 +146,18 @@ function renderUv(items) {
   }).join("");
 }
 
-function weatherIcon(weather = "") {
-  if (/雷/.test(weather)) return "⛈️";
-  if (/雨/.test(weather)) return "🌧️";
-  if (/陰/.test(weather)) return "☁️";
-  if (/多雲/.test(weather)) return "🌤️";
-  return "☀️";
-}
-
-function normalizeSearchText(text = "") {
-  return String(text).trim().toLowerCase().replaceAll("台", "臺");
-}
-
-function renderForecast(items = state.forecast) {
-  const keyword = normalizeSearchText($("#city-search").value);
-  if (!items.length) {
-    $("#empty-state").hidden = true;
-    $("#forecast-list").innerHTML = `<div class="glass-card unavailable-card">${unavailableMarkup("縣市預報")}</div>`;
-    return;
-  }
-  const data = items.filter((item) =>
-    normalizeSearchText(item.city).includes(keyword),
-  );
-  $("#empty-state").hidden = data.length > 0;
-  $("#forecast-list").innerHTML = data.map((item) => `
-    <article class="forecast-card glass-card">
-      <div class="forecast-top"><div class="forecast-city"><strong>${item.city}</strong><span>未來 12 小時</span></div><span class="weather-icon">${weatherIcon(item.weather)}</span></div>
-      <div class="forecast-temp"><strong>${item.max}°</strong><span>${item.weather}</span></div>
-      <div class="forecast-meta">
-        <div><span>最低溫</span><strong>${item.min}°C</strong></div>
-        <div><span>降雨機率</span><strong>${item.rain}%</strong></div>
-        <div><span>舒適度</span><strong>${String(item.comfort).slice(0, 6)}</strong></div>
-      </div>
-    </article>`).join("");
-}
-
 async function loadWeatherData({ announce = false } = {}) {
   const refreshButton = $("#refresh-button");
   refreshButton.classList.add("is-loading");
   refreshButton.disabled = true;
   const results = await Promise.allSettled([
-    fetchDataset(endpoints.rainfall), fetchDataset(endpoints.uv), fetchDataset(endpoints.forecast),
+    fetchDataset(endpoints.rainfall), fetchDataset(endpoints.uv),
   ]);
 
   state.rainfall = results[0].status === "fulfilled" ? normalizeRainfall(results[0].value) : [];
   state.uv = results[1].status === "fulfilled" ? normalizeUv(results[1].value) : [];
-  state.forecast = results[2].status === "fulfilled" ? normalizeForecast(results[2].value) : [];
   renderRainfall(state.rainfall);
   renderUv(state.uv);
-  renderForecast(state.forecast);
 
   const failures = results.filter((result) => result.status === "rejected").length;
   const time = new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
@@ -228,7 +171,6 @@ async function loadWeatherData({ announce = false } = {}) {
 }
 
 formatDate();
-$("#city-search").addEventListener("input", () => renderForecast());
 $("#refresh-button").addEventListener("click", () => loadWeatherData({ announce: true }));
 document.addEventListener("click", (event) => {
   if (event.target.closest(".retry-data")) loadWeatherData({ announce: true });
